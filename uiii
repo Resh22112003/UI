@@ -1,69 +1,102 @@
-Thanks for the detailed code! Based on your requirements:
+Got it! You want to:
 
-You want to send a POST request with neid to /api/endpoints.
+Use the response returned from the submitAPI1, submitAPI2, or submitAPI3 functions (from your form submission).
 
-The response JSON from that POST should be used in your DataTable UI.
-
-So instead of GET in fetchFormData, we'll modify it to POST the neid, and update the DataTable component to support this.
+Pass that response to DataTable.jsx so that it can directly use that data instead of fetching it again via fetchFormData().
 
 
 
 ---
 
-✅ 1. Update your api.jsx file:
+Step-by-Step Solution:
 
-Replace fetchFormData() with a postNeidAndFetchData(data) function:
+We'll:
 
-export const apiBase = 'http://localhost:8080/api';
+1. Store the response data in a global state (using React Context or a state manager like Redux).
 
-export async function postNeidAndFetchData(payload) {
-  const response = await fetch(`${apiBase}/endpoints`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ neid: payload.neid }),
-  });
 
-  if (!response.ok) {
-    throw new Error("Failed to fetch data for NEID");
-  }
+2. Pass it to DataTable after navigation.
 
-  return await response.json(); // Return JSON response
+
+
+
+---
+
+Step 1: Create a context (DataContext.jsx)
+
+import React, { createContext, useState } from 'react';
+
+export const DataContext = createContext();
+
+export function DataProvider({ children }) {
+  const [tableData, setTableData] = useState([]);
+
+  return (
+    <DataContext.Provider value={{ tableData, setTableData }}>
+      {children}
+    </DataContext.Provider>
+  );
 }
 
 
 ---
 
-✅ 2. Update your DataTable.jsx file to send neid and display the result:
+Step 2: Wrap your App with DataProvider in main.jsx or App.jsx
 
-import React, { useEffect, useState } from 'react';
-import { postNeidAndFetchData } from './api.jsx';
+import React from 'react';
+import ReactDOM from 'react-dom';
+import App from './App';
+import { DataProvider } from './DataContext';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <DataProvider>
+      <App />
+    </DataProvider>
+  </React.StrictMode>
+);
+
+
+---
+
+Step 3: Modify Form.jsx to store response in context and then navigate
+
+Update your Form.jsx:
+
+import { useContext } from 'react';
+import { DataContext } from './DataContext';
+// ...
+
+const { setTableData } = useContext(DataContext);
+
+// ...
+const message = await submitAPI1({ neid, timeRange });
+// or API2/API3 depending on conditions
+
+const parsedData = JSON.parse(message); // assuming response is a JSON string
+setTableData(parsedData);
+navigate('/table');
+
+
+---
+
+Step 4: Modify DataTable.jsx to use context data instead of fetching
+
+import React, { useContext } from 'react';
+import { DataContext } from './DataContext';
 import './DataTable.css';
 
 const TABLE_COLUMNS = ['neid', 'timestamp', 'portname', 'description', 'direction', 'kpis', 'location', 'unit'];
 
 function DataTable() {
-  const [jsonData, setJsonData] = useState([]);
-  const [neid, setNeid] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const data = await postNeidAndFetchData({ neid });
-      setJsonData(data);
-    } catch (err) {
-      console.error("Fetch error:", err);
-    }
-    setLoading(false);
-  };
+  const { tableData } = useContext(DataContext);
 
   const downloadTable = () => {
-    if (jsonData.length === 0) return;
+    if (tableData.length === 0) return;
 
     const csvRows = [
       TABLE_COLUMNS.join(','),
-      ...jsonData.map(row =>
+      ...tableData.map(row =>
         TABLE_COLUMNS.map(col => `"${row[col] || ''}"`).join(',')
       )
     ];
@@ -82,22 +115,8 @@ function DataTable() {
   return (
     <div className="json-table-container">
       <h2>Performance Data Table</h2>
-
-      <form onSubmit={handleSubmit}>
-        <input
-          type="text"
-          placeholder="Enter NEID"
-          value={neid}
-          onChange={(e) => setNeid(e.target.value)}
-          required
-        />
-        <button type="submit">Fetch Data</button>
-      </form>
-
-      {loading ? (
-        <p>Loading...</p>
-      ) : jsonData.length === 0 ? (
-        <p>No data available. Submit a NEID to fetch.</p>
+      {tableData.length === 0 ? (
+        <p>No Data Available</p>
       ) : (
         <>
           <table className="json-table">
@@ -109,7 +128,7 @@ function DataTable() {
               </tr>
             </thead>
             <tbody>
-              {jsonData.map((row, index) => (
+              {tableData.map((row, index) => (
                 <tr key={index}>
                   {TABLE_COLUMNS.map((col, i) => (
                     <td key={i}>{row[col] || ''}</td>
@@ -132,14 +151,12 @@ export default DataTable;
 
 ---
 
-Summary:
+Final Notes:
 
-api.jsx now uses POST with neid.
+This ensures the posted response data is stored once and used in the table.
 
-DataTable.jsx now includes a form to enter NEID, sends it to the backend, and displays the data dynamically.
-
-Fully supports CSV download from the fetched JSON.
+If your API response is not a JSON string, you may need to change response.text() to response.json() in your API methods.
 
 
-Let me know if you want to pass in additional parameters (like fromTimestamp, etc.), and I’ll extend the form accordingly.
+Let me know if you’d like me to update the API file or add error handling too.
 
