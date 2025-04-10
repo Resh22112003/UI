@@ -1,87 +1,122 @@
-Got it! You want to:
-
-Use the response returned from the submitAPI1, submitAPI2, or submitAPI3 functions (from your form submission).
-
-Pass that response to DataTable.jsx so that it can directly use that data instead of fetching it again via fetchFormData().
-
+To pass the response from your POST submission in the Form component to the DataTable component without refetching from the backend, you can use React Context. Here's a complete solution:
 
 
 ---
 
-Step-by-Step Solution:
+1. Create a shared context — DataContext.jsx
 
-We'll:
-
-1. Store the response data in a global state (using React Context or a state manager like Redux).
-
-
-2. Pass it to DataTable after navigation.
-
-
-
-
----
-
-Step 1: Create a context (DataContext.jsx)
-
+// src/DataContext.jsx
 import React, { createContext, useState } from 'react';
 
 export const DataContext = createContext();
 
-export function DataProvider({ children }) {
-  const [tableData, setTableData] = useState([]);
+export const DataProvider = ({ children }) => {
+  const [submittedData, setSubmittedData] = useState([]);
 
   return (
-    <DataContext.Provider value={{ tableData, setTableData }}>
+    <DataContext.Provider value={{ submittedData, setSubmittedData }}>
       {children}
     </DataContext.Provider>
   );
-}
+};
 
 
 ---
 
-Step 2: Wrap your App with DataProvider in main.jsx or App.jsx
+2. Update main.jsx or App.jsx to wrap the app in the provider
 
+// src/main.jsx or App.jsx
 import React from 'react';
-import ReactDOM from 'react-dom';
-import App from './App';
-import { DataProvider } from './DataContext';
+import ReactDOM from 'react-dom/client';
+import App from './App.jsx';
+import { BrowserRouter } from 'react-router-dom';
+import { DataProvider } from './DataContext.jsx';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <DataProvider>
-      <App />
-    </DataProvider>
+    <BrowserRouter>
+      <DataProvider>
+        <App />
+      </DataProvider>
+    </BrowserRouter>
   </React.StrictMode>
 );
 
 
 ---
 
-Step 3: Modify Form.jsx to store response in context and then navigate
+3. Update Form.jsx to store the response into context
 
-Update your Form.jsx:
+// src/Form.jsx
+import './Form.css';
+import React, { useState, useContext } from 'react';
+import { submitAPI1, submitAPI2, submitAPI3 } from './api.jsx';
+import { useNavigate } from 'react-router-dom';
+import { DataContext } from './DataContext.jsx';
 
-import { useContext } from 'react';
-import { DataContext } from './DataContext';
-// ...
+function Form() {
+  const navigate = useNavigate();
+  const { setSubmittedData } = useContext(DataContext);
 
-const { setTableData } = useContext(DataContext);
+  const [neid, setNeid] = useState('');
+  const [timeRange, setTimeRange] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [fromHour, setFromHour] = useState('');
+  const [fromMin, setFromMin] = useState('');
+  const [fromSec, setFromSec] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [toHour, setToHour] = useState('');
+  const [toMin, setToMin] = useState('');
+  const [toSec, setToSec] = useState('');
+  const [portname, setportname] = useState('');
+  const [monType, setMonType] = useState('');
+  const [showTimestamp, setShowTimestamp] = useState(false);
+  const [showportname, setShowportname] = useState(false);
+  const [showMonType, setShowMonType] = useState(false);
 
-// ...
-const message = await submitAPI1({ neid, timeRange });
-// or API2/API3 depending on conditions
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-const parsedData = JSON.parse(message); // assuming response is a JSON string
-setTableData(parsedData);
-navigate('/table');
+    try {
+      let response;
+      const fromTimestamp = `${fromDate}-${fromHour}-${fromMin}-${fromSec}`;
+      const toTimestamp = `${toDate}-${toHour}-${toMin}-${toSec}`;
+
+      if (!showTimestamp && !showportname && !showMonType) {
+        response = await submitAPI1({ neid, timeRange });
+      } else if (showTimestamp && showportname && !showMonType) {
+        response = await submitAPI2({ neid, fromTimestamp, toTimestamp, portname });
+      } else if (showTimestamp && showportname && showMonType) {
+        response = await submitAPI3({ neid, fromTimestamp, toTimestamp, portname, monType });
+      } else {
+        alert("Invalid form combination.");
+        return;
+      }
+
+      const parsedData = JSON.parse(response);
+      setSubmittedData(parsedData);
+      navigate('/table');
+    } catch (error) {
+      console.error(error);
+      alert("Submission failed.");
+    }
+  };
+
+  return (
+    <form className="form-container" onSubmit={handleSubmit}>
+      {/* Form UI as in your original code */}
+    </form>
+  );
+}
+
+export default Form;
 
 
 ---
 
-Step 4: Modify DataTable.jsx to use context data instead of fetching
+4. Update DataTable.jsx to use submitted data from context
 
+// src/DataTable.jsx
 import React, { useContext } from 'react';
 import { DataContext } from './DataContext';
 import './DataTable.css';
@@ -89,21 +124,20 @@ import './DataTable.css';
 const TABLE_COLUMNS = ['neid', 'timestamp', 'portname', 'description', 'direction', 'kpis', 'location', 'unit'];
 
 function DataTable() {
-  const { tableData } = useContext(DataContext);
+  const { submittedData } = useContext(DataContext);
 
   const downloadTable = () => {
-    if (tableData.length === 0) return;
+    if (submittedData.length === 0) return;
 
     const csvRows = [
       TABLE_COLUMNS.join(','),
-      ...tableData.map(row =>
+      ...submittedData.map(row =>
         TABLE_COLUMNS.map(col => `"${row[col] || ''}"`).join(',')
       )
     ];
 
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
-
     const link = document.createElement('a');
     link.href = url;
     link.download = 'form-data.csv';
@@ -115,8 +149,8 @@ function DataTable() {
   return (
     <div className="json-table-container">
       <h2>Performance Data Table</h2>
-      {tableData.length === 0 ? (
-        <p>No Data Available</p>
+      {submittedData.length === 0 ? (
+        <p>No data to display.</p>
       ) : (
         <>
           <table className="json-table">
@@ -128,10 +162,10 @@ function DataTable() {
               </tr>
             </thead>
             <tbody>
-              {tableData.map((row, index) => (
+              {submittedData.map((row, index) => (
                 <tr key={index}>
-                  {TABLE_COLUMNS.map((col, i) => (
-                    <td key={i}>{row[col] || ''}</td>
+                  {TABLE_COLUMNS.map((col) => (
+                    <td key={col}>{row[col] || ''}</td>
                   ))}
                 </tr>
               ))}
@@ -151,12 +185,69 @@ export default DataTable;
 
 ---
 
-Final Notes:
+Let me know if you want routing setup (App.jsx) or if the context should persist across page reloads using localStorage.
 
-This ensures the posted response data is stored once and used in the table.
-
-If your API response is not a JSON string, you may need to change response.text() to response.json() in your API methods.
+Here's your api.jsx file with submitAPI1, submitAPI2, and submitAPI3 functions, which use fetch to send POST requests to the backend endpoints.
 
 
-Let me know if you’d like me to update the API file or add error handling too.
+---
+
+api.jsx
+
+// src/api.jsx
+
+const API_BASE_URL = 'http://localhost:8080/api'; // Change this if your backend URL differs
+
+export const submitAPI1 = async ({ neid, timeRange }) => {
+  const response = await fetch(`${API_BASE_URL}/submit1`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ neid, timeRange }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Error in submitAPI1');
+  }
+
+  return response.text(); // assuming response is a JSON string
+};
+
+export const submitAPI2 = async ({ neid, fromTimestamp, toTimestamp, portname }) => {
+  const response = await fetch(`${API_BASE_URL}/submit2`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ neid, fromTimestamp, toTimestamp, portname }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Error in submitAPI2');
+  }
+
+  return response.text();
+};
+
+export const submitAPI3 = async ({ neid, fromTimestamp, toTimestamp, portname, monType }) => {
+  const response = await fetch(`${API_BASE_URL}/submit3`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ neid, fromTimestamp, toTimestamp, portname, monType }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Error in submitAPI3');
+  }
+
+  return response.text();
+};
+
+
+---
+
+Let me know if you want to change response handling (e.g. return response.json() instead of response.text()), or if the API paths differ from /submit1, /submit2, and /submit3.
 
